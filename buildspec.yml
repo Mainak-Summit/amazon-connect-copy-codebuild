@@ -15,22 +15,21 @@ phases:
       - echo "Fetching AWS credentials from Secrets Manager"
 
       # Fetch source credentials JSON from Secrets Manager
-      - CONNECT_SECRET=$(aws secretsmanager get-secret-value --secret-id "$CONNECT_SECRET_NAME" --region "$CONNECT_REGION")
-      - export AWS_ACCESS_KEY_ID=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.SourceAccessKeyId')
-      - export AWS_SECRET_ACCESS_KEY=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.SourceSecretAccessKey')
-      - export AWS_SESSION_TOKEN=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.SourceSessionToken')
+      - CONNECT_SECRET=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --region "$SECRET_REGION")
+      - export SOURCE_AWS_ACCESS_KEY_ID=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.SourceAccessKeyId')
+      - export SOURCE_AWS_SECRET_ACCESS_KEY=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.SourceSecretAccessKey')
+      - export SOURCE_AWS_SESSION_TOKEN=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.SourceSessionToken')
 
       # Fetch target credentials JSON from Secrets Manager
-      - CONNECT_SECRET=$(aws secretsmanager get-secret-value --secret-id "$CONNECT_SECRET_NAME" --region "$CONNECT_REGION")
       - export TARGET_AWS_ACCESS_KEY_ID=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.TargetAccessKeyId')
       - export TARGET_AWS_SECRET_ACCESS_KEY=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.TargetSecretAccessKey')
       - export TARGET_AWS_SESSION_TOKEN=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.TargetSessionToken')
 
       # Create AWS CLI profiles from secrets
       - >
-        printf "[source]\nregion=$SOURCE_REGION\naws_access_key_id=$AWS_ACCESS_KEY_ID
-        aws_secret_access_key=$AWS_SECRET_ACCESS_KEY
-        aws_session_token=$AWS_SESSION_TOKEN\n" > ~/.aws/credentials
+        printf "[source]\nregion=$SOURCE_REGION\naws_access_key_id=$SOURCE_AWS_ACCESS_KEY_ID
+        aws_secret_access_key=$SOURCE_AWS_SECRET_ACCESS_KEY
+        aws_session_token=$SOURCE_AWS_SESSION_TOKEN\n" > ~/.aws/credentials
       - >
         printf "[target]\nregion=$TARGET_REGION\naws_access_key_id=$TARGET_AWS_ACCESS_KEY_ID
         aws_secret_access_key=$TARGET_AWS_SECRET_ACCESS_KEY

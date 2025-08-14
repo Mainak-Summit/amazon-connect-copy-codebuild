@@ -25,47 +25,48 @@ phases:
       - export TARGET_AWS_SESSION_TOKEN=$(jq -r '.Credentials.SessionToken' <<< "$TARGET_ROLE")
 
       # Define profiles for amazon-connect-copy
-      - printf "[source]\naws_access_key_id=$AWS_ACCESS_KEY_ID\naws_secret_access_key=$AWS_SECRET_ACCESS_KEY\naws_session_token=$AWS_SESSION_TOKEN\n" > ~/.aws/credentials
-      - printf "[target]\naws_access_key_id=$TARGET_AWS_ACCESS_KEY_ID\naws_secret_access_key=$TARGET_AWS_SECRET_ACCESS_KEY\naws_session_token=$TARGET_AWS_SESSION_TOKEN\n" >> ~/.aws/credentials
+      - >
+        printf "[source]\nregion=$SOURCE_REGION\naws_access_key_id=$AWS_ACCESS_KEY_ID
+        aws_secret_access_key=$AWS_SECRET_ACCESS_KEY
+        aws_session_token=$AWS_SESSION_TOKEN\n" > ~/.aws/credentials
+      - >
+        printf "[target]\nregion=$TARGET_REGION\naws_access_key_id=$TARGET_AWS_ACCESS_KEY_ID
+        aws_secret_access_key=$TARGET_AWS_SECRET_ACCESS_KEY
+        aws_session_token=$TARGET_AWS_SESSION_TOKEN\n" >> ~/.aws/credentials
 
   build:
     commands:
       - echo "Starting replication process..."
 
-      # Export the specified flow and its dependencies from the source instance
+      # Conditionally export source instance
       - |
-        echo "Exporting flow and dependencies for '$SCOPE'..."
-        connect_save -p source -c "$SCOPE" "$SOURCE_INSTANCE"
+        echo "Exporting from source instance ($SOURCE_REGION)..."
+        export AWS_DEFAULT_REGION="$SOURCE_REGION"
+        if [ "$SCOPE" = "ALL" ]; then
+          connect_save -p source "$SOURCE_INSTANCE"
+        else
+          connect_save -p source -c "$SCOPE" "$SOURCE_INSTANCE"
+        fi
 
-      # Generate a diff between source and target instances
+      # Conditionally export target instance
+      - |
+        echo "Exporting from target instance ($TARGET_REGION)..."
+        export AWS_DEFAULT_REGION="$TARGET_REGION"
+        if [ "$SCOPE" = "ALL" ]; then
+          connect_save -p target "$TARGET_INSTANCE"
+        else
+          connect_save -p target -c "$SCOPE" "$TARGET_INSTANCE"
+        fi
+
+      # Generate a diff
       - connect_diff "$SOURCE_INSTANCE" "$TARGET_INSTANCE" diff
 
-      # Identify missing resources by parsing the diff output
-      - |
-        echo "Identifying missing resources..."
-        MISSING_RESOURCES=$(grep -E '^(Missing|Unresolved)' diff)
-        echo "$MISSING_RESOURCES" > missing_resources.txt
-
-      # Export and import missing resources
-      - |
-        while IFS= read -r resource; do
-          RESOURCE_TYPE=$(echo "$resource" | awk '{print $1}')
-          RESOURCE_NAME=$(echo "$resource" | awk '{print $2}')
-          echo "Exporting missing $RESOURCE_TYPE: $RESOURCE_NAME"
-          connect_save -p source -c "$RESOURCE_NAME" "$SOURCE_INSTANCE"
-          echo "Importing $RESOURCE_TYPE: $RESOURCE_NAME into target instance"
-          connect_copy -d "$RESOURCE_NAME"
-        done < missing_resources.txt
-
-      # Apply changes to the target instance
+      # Final apply to target instance
       - echo "Applying changes to target instance..."
+      - export AWS_DEFAULT_REGION="$TARGET_REGION"
       - connect_copy diff
 
-      # Upload results to S3
+      # Upload to S3
       - date=$(date '+%Y/%m/%d')
       - s3_path="${SOURCE_ENV}_TO_${TARGET_ENV}"
       - aws s3 cp . "s3://${S3_BUCKET}/${date}/${s3_path}/${CODEBUILD_BUILD_NUMBER}" --recursive
-
-artifacts:
-  files:
-    - '**/*'

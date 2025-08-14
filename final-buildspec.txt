@@ -12,21 +12,19 @@ phases:
       - cp amazon-connect-copy/bin/* /usr/local/bin
       - chmod 755 -R /usr/local/bin/
 
-      - echo "Fetching AWS credentials from Secrets Manager"
+      - echo "Assuming source role in Account A"
+      - SOURCE_ROLE=$(aws sts assume-role --role-arn "$SOURCE_ROLE_ARN" --role-session-name sourceSession)
+      - export AWS_ACCESS_KEY_ID=$(jq -r '.Credentials.AccessKeyId' <<< "$SOURCE_ROLE")
+      - export AWS_SECRET_ACCESS_KEY=$(jq -r '.Credentials.SecretAccessKey' <<< "$SOURCE_ROLE")
+      - export AWS_SESSION_TOKEN=$(jq -r '.Credentials.SessionToken' <<< "$SOURCE_ROLE")
 
-      # Fetch source credentials JSON from Secrets Manager
-      - SOURCE_SECRET=$(aws secretsmanager get-secret-value --secret-id "$SOURCE_SECRET_NAME" --region "$SOURCE_REGION")
-      - export AWS_ACCESS_KEY_ID=$(echo $SOURCE_SECRET | jq -r '.SecretString' | jq -r '.AccessKeyId')
-      - export AWS_SECRET_ACCESS_KEY=$(echo $SOURCE_SECRET | jq -r '.SecretString' | jq -r '.SecretAccessKey')
-      - export AWS_SESSION_TOKEN=$(echo $SOURCE_SECRET | jq -r '.SecretString' | jq -r '.SessionToken')
+      - echo "Assuming target role in Account B"
+      - TARGET_ROLE=$(aws sts assume-role --role-arn "$TARGET_ROLE_ARN" --role-session-name targetSession)
+      - export TARGET_AWS_ACCESS_KEY_ID=$(jq -r '.Credentials.AccessKeyId' <<< "$TARGET_ROLE")
+      - export TARGET_AWS_SECRET_ACCESS_KEY=$(jq -r '.Credentials.SecretAccessKey' <<< "$TARGET_ROLE")
+      - export TARGET_AWS_SESSION_TOKEN=$(jq -r '.Credentials.SessionToken' <<< "$TARGET_ROLE")
 
-      # Fetch target credentials JSON from Secrets Manager
-      - TARGET_SECRET=$(aws secretsmanager get-secret-value --secret-id "$TARGET_SECRET_NAME" --region "$TARGET_REGION")
-      - export TARGET_AWS_ACCESS_KEY_ID=$(echo $TARGET_SECRET | jq -r '.SecretString' | jq -r '.AccessKeyId')
-      - export TARGET_AWS_SECRET_ACCESS_KEY=$(echo $TARGET_SECRET | jq -r '.SecretString' | jq -r '.SecretAccessKey')
-      - export TARGET_AWS_SESSION_TOKEN=$(echo $TARGET_SECRET | jq -r '.SecretString' | jq -r '.SessionToken')
-
-      # Create AWS CLI profiles from secrets
+      # Define profiles for amazon-connect-copy
       - >
         printf "[source]\nregion=$SOURCE_REGION\naws_access_key_id=$AWS_ACCESS_KEY_ID
         aws_secret_access_key=$AWS_SECRET_ACCESS_KEY
@@ -40,6 +38,7 @@ phases:
     commands:
       - echo "Starting replication process..."
 
+      # Conditionally export source instance
       - |
         echo "Exporting from source instance ($SOURCE_REGION)..."
         export AWS_DEFAULT_REGION="$SOURCE_REGION"
@@ -49,6 +48,7 @@ phases:
           connect_save -p source -c "$SCOPE" "$SOURCE_INSTANCE"
         fi
 
+      # Conditionally export target instance
       - |
         echo "Exporting from target instance ($TARGET_REGION)..."
         export AWS_DEFAULT_REGION="$TARGET_REGION"
@@ -58,12 +58,15 @@ phases:
           connect_save -p target -c "$SCOPE" "$TARGET_INSTANCE"
         fi
 
+      # Generate a diff
       - connect_diff "$SOURCE_INSTANCE" "$TARGET_INSTANCE" diff
 
+      # Final apply to target instance
       - echo "Applying changes to target instance..."
       - export AWS_DEFAULT_REGION="$TARGET_REGION"
       - connect_copy diff
 
+      # Upload to S3
       - date=$(date '+%Y/%m/%d')
       - s3_path="${SOURCE_ENV}_TO_${TARGET_ENV}"
       - aws s3 cp . "s3://${S3_BUCKET}/${date}/${s3_path}/${CODEBUILD_BUILD_NUMBER}" --recursive

@@ -23,15 +23,11 @@ phases:
       - export TARGET_AWS_SECRET_ACCESS_KEY=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.TargetSecretAccessKey')
       - export TARGET_AWS_SESSION_TOKEN=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.TargetSessionToken')
 
-      - >
-        printf "[source]\naws_access_key_id=$SOURCE_AWS_ACCESS_KEY_ID
-        aws_secret_access_key=$SOURCE_AWS_SECRET_ACCESS_KEY
-        aws_session_token=$SOURCE_AWS_SESSION_TOKEN\n" > ~/.aws/credentials
+      - mkdir -p /root/.aws
+      - printf "[source]\naws_access_key_id=$SOURCE_AWS_ACCESS_KEY_ID\naws_secret_access_key=$SOURCE_AWS_SECRET_ACCESS_KEY\naws_session_token=$SOURCE_AWS_SESSION_TOKEN\n" > /root/.aws/credentials
 
-      - >
-        printf "[target]\naws_access_key_id=$TARGET_AWS_ACCESS_KEY_ID
-        aws_secret_access_key=$TARGET_AWS_SECRET_ACCESS_KEY
-        aws_session_token=$TARGET_AWS_SESSION_TOKEN\n" >> ~/.aws/credentials
+      - printf "[target]\naws_access_key_id=$TARGET_AWS_ACCESS_KEY_ID\naws_secret_access_key=$TARGET_AWS_SECRET_ACCESS_KEY\naws_session_token=$TARGET_AWS_SESSION_TOKEN\n" >> /root/.aws/credentials
+
 
   build:
     commands:

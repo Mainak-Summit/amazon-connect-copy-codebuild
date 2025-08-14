@@ -1,0 +1,71 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "Installing AWS CLI and amazon-connect-copy tool"
+      - curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+      - unzip -q awscliv2.zip
+      - sudo ./aws/install -i /usr/local/aws-cli -b /usr/local/bin --update
+      - export PATH="/usr/local/bin:$PATH"
+      - git clone https://github.com/Mainak-Summit/amazon-connect-copy
+      - cp amazon-connect-copy/bin/* /usr/local/bin
+      - chmod 755 -R /usr/local/bin/
+
+      - echo "Assuming source role in Account A"
+      - SOURCE_ROLE=$(aws sts assume-role --role-arn "$SOURCE_ROLE_ARN" --role-session-name sourceSession)
+      - export AWS_ACCESS_KEY_ID=$(jq -r '.Credentials.AccessKeyId' <<< "$SOURCE_ROLE")
+      - export AWS_SECRET_ACCESS_KEY=$(jq -r '.Credentials.SecretAccessKey' <<< "$SOURCE_ROLE")
+      - export AWS_SESSION_TOKEN=$(jq -r '.Credentials.SessionToken' <<< "$SOURCE_ROLE")
+
+      - echo "Assuming target role in Account B"
+      - TARGET_ROLE=$(aws sts assume-role --role-arn "$TARGET_ROLE_ARN" --role-session-name targetSession)
+      - export TARGET_AWS_ACCESS_KEY_ID=$(jq -r '.Credentials.AccessKeyId' <<< "$TARGET_ROLE")
+      - export TARGET_AWS_SECRET_ACCESS_KEY=$(jq -r '.Credentials.SecretAccessKey' <<< "$TARGET_ROLE")
+      - export TARGET_AWS_SESSION_TOKEN=$(jq -r '.Credentials.SessionToken' <<< "$TARGET_ROLE")
+
+      # Define profiles for amazon-connect-copy
+      - printf "[source]\naws_access_key_id=$AWS_ACCESS_KEY_ID\naws_secret_access_key=$AWS_SECRET_ACCESS_KEY\naws_session_token=$AWS_SESSION_TOKEN\n" > ~/.aws/credentials
+      - printf "[target]\naws_access_key_id=$TARGET_AWS_ACCESS_KEY_ID\naws_secret_access_key=$TARGET_AWS_SECRET_ACCESS_KEY\naws_session_token=$TARGET_AWS_SESSION_TOKEN\n" >> ~/.aws/credentials
+
+  build:
+    commands:
+      - echo "Starting replication process..."
+
+      # Export the specified flow and its dependencies from the source instance
+      - |
+        echo "Exporting flow and dependencies for '$SCOPE'..."
+        connect_save -p source -c "$SCOPE" "$SOURCE_INSTANCE"
+
+      # Generate a diff between source and target instances
+      - connect_diff "$SOURCE_INSTANCE" "$TARGET_INSTANCE" diff
+
+      # Identify missing resources by parsing the diff output
+      - |
+        echo "Identifying missing resources..."
+        MISSING_RESOURCES=$(grep -E '^(Missing|Unresolved)' diff)
+        echo "$MISSING_RESOURCES" > missing_resources.txt
+
+      # Export and import missing resources
+      - |
+        while IFS= read -r resource; do
+          RESOURCE_TYPE=$(echo "$resource" | awk '{print $1}')
+          RESOURCE_NAME=$(echo "$resource" | awk '{print $2}')
+          echo "Exporting missing $RESOURCE_TYPE: $RESOURCE_NAME"
+          connect_save -p source -c "$RESOURCE_NAME" "$SOURCE_INSTANCE"
+          echo "Importing $RESOURCE_TYPE: $RESOURCE_NAME into target instance"
+          connect_copy -d "$RESOURCE_NAME"
+        done < missing_resources.txt
+
+      # Apply changes to the target instance
+      - echo "Applying changes to target instance..."
+      - connect_copy diff
+
+      # Upload results to S3
+      - date=$(date '+%Y/%m/%d')
+      - s3_path="${SOURCE_ENV}_TO_${TARGET_ENV}"
+      - aws s3 cp . "s3://${S3_BUCKET}/${date}/${s3_path}/${CODEBUILD_BUILD_NUMBER}" --recursive
+
+artifacts:
+  files:
+    - '**/*'

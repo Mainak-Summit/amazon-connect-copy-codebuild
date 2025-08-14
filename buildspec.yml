@@ -15,16 +15,16 @@ phases:
       - echo "Fetching AWS credentials from Secrets Manager"
 
       # Fetch source credentials JSON from Secrets Manager
-      - SOURCE_SECRET=$(aws secretsmanager get-secret-value --secret-id "$SOURCE_SECRET_NAME" --region "$SOURCE_REGION")
-      - export AWS_ACCESS_KEY_ID=$(echo $SOURCE_SECRET | jq -r '.SecretString' | jq -r '.AccessKeyId')
-      - export AWS_SECRET_ACCESS_KEY=$(echo $SOURCE_SECRET | jq -r '.SecretString' | jq -r '.SecretAccessKey')
-      - export AWS_SESSION_TOKEN=$(echo $SOURCE_SECRET | jq -r '.SecretString' | jq -r '.SessionToken')
+      - CONNECT_SECRET=$(aws secretsmanager get-secret-value --secret-id "$CONNECT_SECRET_NAME" --region "$CONNECT_REGION")
+      - export AWS_ACCESS_KEY_ID=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.SourceAccessKeyId')
+      - export AWS_SECRET_ACCESS_KEY=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.SourceSecretAccessKey')
+      - export AWS_SESSION_TOKEN=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.SourceSessionToken')
 
       # Fetch target credentials JSON from Secrets Manager
-      - TARGET_SECRET=$(aws secretsmanager get-secret-value --secret-id "$TARGET_SECRET_NAME" --region "$TARGET_REGION")
-      - export TARGET_AWS_ACCESS_KEY_ID=$(echo $TARGET_SECRET | jq -r '.SecretString' | jq -r '.AccessKeyId')
-      - export TARGET_AWS_SECRET_ACCESS_KEY=$(echo $TARGET_SECRET | jq -r '.SecretString' | jq -r '.SecretAccessKey')
-      - export TARGET_AWS_SESSION_TOKEN=$(echo $TARGET_SECRET | jq -r '.SecretString' | jq -r '.SessionToken')
+      - CONNECT_SECRET=$(aws secretsmanager get-secret-value --secret-id "$CONNECT_SECRET_NAME" --region "$CONNECT_REGION")
+      - export TARGET_AWS_ACCESS_KEY_ID=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.TargetAccessKeyId')
+      - export TARGET_AWS_SECRET_ACCESS_KEY=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.TargetSecretAccessKey')
+      - export TARGET_AWS_SESSION_TOKEN=$(echo $CONNECT_SECRET | jq -r '.SecretString' | jq -r '.TargetSessionToken')
 
       # Create AWS CLI profiles from secrets
       - >
